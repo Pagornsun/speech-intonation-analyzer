@@ -1,9 +1,9 @@
-# 👨‍💻 Data Scientist Role
+# Data Scientist Role
 
 ในตำแหน่ง **Data Scientist** หน้าที่หลักคือการออกแบบ pipeline สำหรับ **การจัดการข้อมูล (Data Handling)**, **Feature Engineering**, และ **การสร้างชุดข้อมูลสำหรับการ train/test โมเดล**  
 
 --- 
-## 📂 Project Structure (Data Scientist Focus)
+## Project Structure (Data Scientist Focus)
 ```markdown
 speech-intonation-analyzer/
 ├─ data/
