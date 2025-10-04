@@ -1,0 +1,19 @@
+{
+  "by_dataset": {
+    "crema-d": 7442,
+    "tess": 2800,
+    "ravdess": 1440,
+    "saveee": 480
+  },
+  "by_label": {
+    "angry": 2913,
+    "happy": 2499,
+    "sad": 1777,
+    "disgust": 1463,
+    "fear": 1463,
+    "neutral": 1375,
+    "unknown": 480,
+    "surprise": 192
+  },
+  "avg_duration_sec": 1.9601364167077784
+}
