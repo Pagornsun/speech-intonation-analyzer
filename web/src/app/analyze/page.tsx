@@ -1,69 +1,113 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import Recorder from "@/components/Recorder";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Recorder, { type ReadyPayload } from "@/components/Recorder";
 
-type ReadyPayload = {
-  blob?: Blob;
-  file?: File;
-  url: string;
-  mime: string;
-  durationSec: number;
-};
+type Ready = ReadyPayload;
 
 export default function AnalyzePage() {
-  const [audio, setAudio] = useState<ReadyPayload | null>(null);
+  const [audio, setAudio] = useState<Ready | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [prefs, setPrefs] = useState<any>({});
 
-  const hasAudio = !!audio?.url;
+  const hasAudio = !!audio;
+
+  // ✅ โหลด Settings จาก localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("sia:prefs");
+      if (raw) setPrefs(JSON.parse(raw));
+    } catch {
+      console.warn("Failed to parse prefs");
+    }
+  }, []);
 
   const sizeText = useMemo(() => {
-    if (!audio?.file && !audio?.blob) return "-";
-    const s = (audio.file?.size ?? audio.blob?.size ?? 0) / (1024 * 1024);
-    return `${s.toFixed(2)} MB`;
+    const bytes = audio?.sizeBytes ?? audio?.file?.size ?? audio?.blob?.size;
+    if (bytes == null) return "-";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   }, [audio]);
 
-  const onReady = useCallback((p: ReadyPayload) => {
-    setAudio(p);
-    setError(null);
-  }, []);
+  const onReady = useCallback(
+    (p: Ready) => {
+      setAudio(p);
+      setError(null);
+
+      // ✅ Auto Analyze ถ้าผู้ใช้เปิดไว้
+      if (prefs.autoAnalyze) {
+        setTimeout(() => {
+          handleSubmit(p);
+        }, 1000);
+      }
+    },
+    [prefs]
+  );
 
   const reset = () => {
     setAudio(null);
     setError(null);
   };
 
-  const submit = async () => {
-    if (!audio?.url) return;
+  const handleSubmit = async (a?: Ready) => {
+    const targetAudio = a || audio;
+    if (!targetAudio) return;
+
     try {
       setSubmitting(true);
-      const form = new FormData();
-      if (audio.file) form.append("audio", audio.file);
-      else if (audio.blob) form.append("audio", audio.blob, "record.webm");
-      else {
-        // fetch blob from object URL
-        const res = await fetch(audio.url);
+      const fd = new FormData();
+
+      // ✅ เพิ่มข้อมูล Settings ไปใน FormData ด้วย
+      fd.append("language", prefs.language || "en");
+      fd.append("samplingRate", String(prefs.samplingRate || 44100));
+      fd.append("fftSize", String(prefs.fftSize || 2048));
+
+      // เลือก source ที่มีอยู่จริง
+      if (targetAudio.file) {
+        fd.append("audio", targetAudio.file);
+      } else if (targetAudio.blob) {
+        const name =
+          targetAudio.name ||
+          `record_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.webm`;
+        fd.append("audio", new File([targetAudio.blob], name, { type: targetAudio.mime }));
+      } else {
+        const res = await fetch(targetAudio.url);
         const blob = await res.blob();
-        form.append("audio", blob, "audio.webm");
+        fd.append(
+          "audio",
+          new File(
+            [blob],
+            targetAudio.name ||
+              `audio_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.webm`,
+            { type: targetAudio.mime }
+          )
+        );
       }
-      form.append("duration", String(audio.durationSec));
 
-      const res = await fetch("/api/analyze", { method: "POST", body: form });
+      fd.append("duration", String(targetAudio.durationSec ?? 0));
+
+      const res = await fetch("/api/analyze", { method: "POST", body: fd });
       const json = await res.json();
-
       if (!res.ok) throw new Error(json?.error || "Analyze failed");
-      // เก็บผลลัพธ์ไว้ใน localStorage เพื่อหน้า /results อ่านต่อได้
+
+      // ✅ เก็บผลลัพธ์ส่งต่อหน้า /results
       localStorage.setItem(
         "sia:latest",
         JSON.stringify({
-          audio: { url: audio.url, mime: audio.mime, durationSec: audio.durationSec },
-          result: json.result,
           ts: Date.now(),
+          audio: {
+            url: targetAudio.url,
+            mime: targetAudio.mime,
+            dur: targetAudio.durationSec,
+          },
+          result: json.result,
         })
       );
-      location.assign("/results");
+
+      window.location.assign("/results");
     } catch (e: any) {
       setError(e?.message || "Analyze failed");
     } finally {
@@ -72,37 +116,38 @@ export default function AnalyzePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background-light text-gray-200">
-      {/* Top */}
+    <div className="min-h-screen bg-background-light text-gray-200 font-display">
+      {/* Header */}
       <div className="px-6 py-5">
         <div className="mx-auto max-w-5xl flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-primary text-2xl">multitrack_audio</span>
-            <span className="font-semibold">Speech Intonation Analyzer</span>
+            <span className="font-semibold">
+              {prefs.language === "th" ? "ตัววิเคราะห์น้ำเสียง" : "Speech Intonation Analyzer"}
+            </span>
           </div>
-          <Link
-            href="/results"
-            className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-sm"
-          >
-            View Results
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/settings"
+              className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-sm"
+            >
+              ⚙ {prefs.language === "th" ? "ตั้งค่า" : "Settings"}
+            </Link>
+            <Link
+              href="/results"
+              className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-sm"
+            >
+              {prefs.language === "th" ? "ผลลัพธ์" : "View Results"}
+            </Link>
+          </div>
         </div>
       </div>
 
-      {/* Recorder card */}
-      <div className="mx-auto max-w-5xl px-6 pb-16">
+      {/* Recorder */}
+      <div className="mx-auto max-w-5xl px-6 pb-6">
         <div className="neu-surface rounded-2xl p-6 md:p-8">
           <Recorder onReady={onReady} />
 
-          {/* Info Bar */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-3">
-            <InfoItem label="File name" value={audio?.file?.name ?? (audio?.blob ? "record.webm" : "-")} />
-            <InfoItem label="MIME" value={audio?.mime ?? "-"} />
-            <InfoItem label="Duration" value={audio ? `${audio.durationSec.toFixed(2)} s` : "-"} />
-            <InfoItem label="Size" value={sizeText} />
-          </div>
-
-          {/* Error banner */}
           {error && (
             <div className="mt-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-300">
               {error}
@@ -110,26 +155,27 @@ export default function AnalyzePage() {
           )}
 
           {/* Actions */}
-          <div className="mt-6 flex items-center justify-between">
-            <p className="text-xs text-gray-400">
-              Tip: ต้องเปิดผ่าน <span className="text-primary">https://</span> หรือ <span className="text-primary">http://localhost</span> เพื่อใช้ไมโครโฟน
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={reset}
-                disabled={!hasAudio || isSubmitting}
-                className="px-4 h-10 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-40 transition"
-              >
-                Reset
-              </button>
-              <button
-                onClick={submit}
-                disabled={!hasAudio || isSubmitting}
-                className="px-5 h-10 rounded-lg bg-primary text-white font-semibold shadow-lg disabled:opacity-40 hover:bg-primary/90 transition"
-              >
-                {isSubmitting ? "Analyzing..." : "Analyze"}
-              </button>
-            </div>
+          <div className="mt-6 flex items-center justify-end gap-3">
+            <button
+              onClick={reset}
+              disabled={!hasAudio || submitting}
+              className="px-4 h-10 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-40 transition"
+            >
+              {prefs.language === "th" ? "รีเซ็ต" : "Reset"}
+            </button>
+            <button
+              onClick={() => handleSubmit()}
+              disabled={!hasAudio || submitting}
+              className="px-5 h-10 rounded-lg bg-primary text-white font-semibold shadow-lg disabled:opacity-40 hover:bg-primary/90 transition"
+            >
+              {submitting
+                ? prefs.language === "th"
+                  ? "กำลังวิเคราะห์..."
+                  : "Analyzing..."
+                : prefs.language === "th"
+                ? "วิเคราะห์"
+                : "Analyze"}
+            </button>
           </div>
         </div>
       </div>

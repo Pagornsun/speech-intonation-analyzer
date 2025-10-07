@@ -23,8 +23,10 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Hero */}
-      <main className="relative z-10 flex flex-1 items-center justify-center px-6 md:px-16 lg:px-28">
+      {/* Hero Section */}
+      {/* Hero Section */}
+<main className="relative z-10 flex flex-1 items-center justify-center px-6 md:px-16 lg:px-28 pt-24 md:pt-32">
+
         <div className="grid w-full max-w-6xl grid-cols-1 items-center gap-16 lg:grid-cols-2">
           {/* Text */}
           <div className="flex flex-col gap-6 text-center lg:text-left">
@@ -53,7 +55,7 @@ export default function HomePage() {
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3, duration: 0.4 }}
-              className="flex justify-center lg:justify-start"
+              className="flex justify-center lg:justify-start gap-3"
             >
               <Link
                 href="/analyze"
@@ -61,7 +63,14 @@ export default function HomePage() {
               >
                 Start Recording
                 <span className="material-symbols-outlined ml-2 text-base">mic</span>
-                <span className="pointer-events-none absolute -inset-0.5 rounded-xl bg-primary/30 blur-xl opacity-0 transition-opacity duration-300 hover:opacity-100" />
+              </Link>
+
+              <Link
+                href="/about"
+                className="relative inline-flex items-center justify-center px-6 py-3 text-lg font-semibold text-primary bg-white/10 rounded-xl shadow-md hover:bg-white/20 transition-all duration-300"
+              >
+                Learn More
+                <span className="material-symbols-outlined ml-2 text-base">info</span>
               </Link>
             </motion.div>
           </div>
@@ -91,7 +100,76 @@ export default function HomePage() {
         </div>
       </main>
 
-    
+      {/* About Section Preview */}
+      <section className="relative z-10 w-full bg-[#11121e]/70 backdrop-blur-md py-20 px-6 md:px-16">
+        <div className="mx-auto max-w-5xl text-center">
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-3xl md:text-4xl font-bold text-white mb-4"
+          >
+            About <span className="text-primary">Speech Intonation Analyzer</span>
+          </motion.h2>
+
+          <motion.p
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.7 }}
+            className="text-gray-400 max-w-2xl mx-auto leading-relaxed mb-10"
+          >
+            This project analyzes the prosody and emotion of human speech using AI-based signal processing.  
+            It combines real-time recording, waveform visualization, and intelligent analysis to detect tone, pitch, and emotional characteristics.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-left"
+          >
+            <FeatureCard icon="target" title="Objective" desc="To recognize emotion and prosodic patterns from speech tone and energy." />
+            <FeatureCard icon="deployed_code" title="Tech Stack" desc="Next.js 15, TypeScript, TailwindCSS, Web Audio API, Chart.js" />
+            <FeatureCard icon="lightbulb" title="Future Plan" desc="Integrate real ML models (TensorFlow.js / Python) for live analysis." />
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="mt-12"
+          >
+            <Link
+              href="/about"
+              className="inline-flex items-center px-6 py-3 rounded-lg bg-primary text-white font-semibold text-lg shadow-md hover:bg-primary/90 transition"
+            >
+              Explore Full Documentation
+              <span className="material-symbols-outlined ml-2 text-base">arrow_forward</span>
+            </Link>
+          </motion.div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* Small card component for features */
+function FeatureCard({
+  icon,
+  title,
+  desc,
+}: {
+  icon: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <div className="rounded-xl bg-white/5 p-5 ring-1 ring-white/10 hover:bg-white/10 transition">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="material-symbols-outlined text-primary">{icon}</span>
+        <h3 className="font-semibold text-white text-lg">{title}</h3>
+      </div>
+      <p className="text-gray-400 text-sm">{desc}</p>
     </div>
   );
 }

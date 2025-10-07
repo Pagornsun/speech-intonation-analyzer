@@ -2,9 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-/* ===================== Types ===================== */
+/* ============== Types ============== */
 type SeriesPoint = { t: number; v: number };
-
 type Latest = {
   ts: number;
   audio: { url: string; mime: string; dur?: number };
@@ -18,24 +17,38 @@ type Latest = {
   };
 };
 
-/* ===================== Emotion Colors ===================== */
-const EMO_COLORS: Record<string, string> = {
-  angry: "#f59e0b",   // orange
-  happy: "#fde047",   // yellow
-  sad: "#60a5fa",     // blue
-  fear: "#a78bfa",    // purple
-  disgust: "#34d399", // green
-  neutral: "#94a3b8", // slate
-  surprise: "#f472b6" // pink
-};
+/* ============== Preferences (Settings) ============== */
+/** อ่าน settings ถ้ามี แต่ default = EN เพื่อให้ตรงกับหน้าตาเดิม */
+function usePrefs() {
+  const [prefs, setPrefs] = useState<{ lang?: "en" | "th"; autoplay?: boolean } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("sia:preferences");
+      if (raw) setPrefs(JSON.parse(raw));
+    } catch {}
+  }, []);
+  return {
+    lang: (prefs?.lang ?? "en") as "en" | "th",
+    autoplay: !!prefs?.autoplay,
+  };
+}
 
+/* ============== Emotion Colors ============== */
+const EMO_COLORS: Record<string, string> = {
+  angry: "#f59e0b",
+  happy: "#fde047",
+  sad: "#60a5fa",
+  fear: "#a78bfa",
+  disgust: "#34d399",
+  neutral: "#94a3b8",
+  surprise: "#f472b6",
+};
 const getEmoColor = (emo?: string, fallback = "#4F46E5") =>
   EMO_COLORS[(emo || "").toLowerCase()] ?? fallback;
 
-/* ===================== Utils ===================== */
+/* ============== Utils / Chart ============== */
 const fmtSec = (s: number) => (Number.isFinite(s) ? s.toFixed(2) : "0.00");
 
-/** วาดกราฟเส้น + แกน X/Y พร้อมตัวเลข */
 function drawLineChart(
   canvas: HTMLCanvasElement,
   points: SeriesPoint[],
@@ -60,7 +73,6 @@ function drawLineChart(
   canvas.height = Math.floor(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // padding สำหรับเลขแกน
   const pad = { l: 56, r: 16, t: 22, b: 32 };
   const w = cssW - pad.l - pad.r;
   const h = cssH - pad.t - pad.b;
@@ -76,8 +88,10 @@ function drawLineChart(
     return;
   }
 
-  // domain
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
   for (const p of points) {
     if (p.t < minX) minX = p.t;
     if (p.t > maxX) maxX = p.t;
@@ -87,7 +101,6 @@ function drawLineChart(
   if (minX === maxX) maxX = minX + 1e-6;
   if (minY === maxY) maxY = minY + 1e-6;
 
-  // tick helper
   const xDiv = Math.max(2, opts?.xTicks ?? 8);
   const yDiv = Math.max(2, opts?.yTicks ?? 5);
   const niceStep = (range: number) => {
@@ -115,7 +128,6 @@ function drawLineChart(
   const xToPx = (x: number) => pad.l + ((x - xTicks.start) / (xTicks.end - xTicks.start)) * w;
   const yToPx = (y: number) => pad.t + (1 - (y - yTicks.start) / (yTicks.end - yTicks.start)) * h;
 
-  // grid
   ctx.strokeStyle = opts?.gridColor ?? "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -131,7 +143,6 @@ function drawLineChart(
   }
   ctx.stroke();
 
-  // axis lines
   ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.beginPath();
   ctx.moveTo(pad.l, pad.t + h);
@@ -140,8 +151,7 @@ function drawLineChart(
   ctx.lineTo(pad.l, pad.t + h);
   ctx.stroke();
 
-  // tick labels
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
   ctx.font = "12px sans-serif";
 
   ctx.textAlign = "center";
@@ -154,14 +164,12 @@ function drawLineChart(
   const yFmt = opts?.yFmt ?? ((y: number) => y.toFixed(0));
   for (const ty of yTicks.ticks) ctx.fillText(yFmt(ty), pad.l - 8, yToPx(ty));
 
-  // unit
   if (opts?.unitY) {
     ctx.textAlign = "right";
     ctx.textBaseline = "top";
     ctx.fillText(opts.unitY, pad.l + w, pad.t + 4);
   }
 
-  // line
   ctx.lineWidth = 2;
   ctx.strokeStyle = opts?.color ?? "#22d3ee";
   ctx.beginPath();
@@ -169,7 +177,6 @@ function drawLineChart(
   for (let i = 1; i < points.length; i++) ctx.lineTo(xToPx(points[i].t), yToPx(points[i].v));
   ctx.stroke();
 
-  // dots (เว้นระยะเพื่อลื่น)
   ctx.fillStyle = "rgba(255,255,255,0.9)";
   const stepDot = Math.max(1, Math.floor(points.length / 40));
   for (let i = 0; i < points.length; i += stepDot) {
@@ -179,106 +186,166 @@ function drawLineChart(
   }
 }
 
-/* ===================== Component ===================== */
+/* ============== Component ============== */
 export default function ResultsPage() {
-  // ---- Hooks (top-level เท่านั้น) ----
+  const { lang, autoplay } = usePrefs(); // default EN
   const [data, setData] = useState<Latest | null>(null);
   const [tab, setTab] = useState<"pitch" | "energy">("pitch");
   const [audioMetaDur, setAudioMetaDur] = useState<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // โหลดข้อมูลจาก localStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("sia:latest");
-      if (raw) setData(JSON.parse(raw));
+      // รองรับทั้ง sessionStorage (เวอร์ชันใหม่ Analyze) และ localStorage (เวอร์ชันเก่า)
+      const s = sessionStorage.getItem("analysisResult");
+      const l = localStorage.getItem("sia:latest");
+      const raw = s || l;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // map ให้อยู่รูปเดียวกัน
+        if (parsed?.file && parsed?.result) {
+          const mapped: Latest = {
+            ts: parsed.ts ?? Date.now(),
+            audio: { url: parsed.file.url, mime: parsed.file.mime, dur: parsed.file.dur },
+            result: {
+              emotion: parsed.result.emotion,
+              distribution: parsed.result.distribution,
+              prosody: {
+                pitchHz: parsed.result.prosody?.pitch ?? parsed.result.prosody?.f0_mean ?? 0,
+                energyRms: parsed.result.prosody?.energy ?? parsed.result.prosody?.rms_mean ?? 0,
+                wpm: parsed.result.prosody?.wpm ?? parsed.result.prosody?.speech_rate ?? 0,
+              },
+              pitchSeries:
+                parsed.result.charts?.pitch?.map((p: [number, number]) => ({ t: p[0], v: p[1] })) ??
+                parsed.result.pitchSeries ??
+                [],
+              energySeries:
+                parsed.result.charts?.energy?.map((p: [number, number]) => ({ t: p[0], v: p[1] })) ??
+                parsed.result.energySeries ??
+                [],
+              advice: parsed.result.advice ?? [],
+            },
+          };
+          setData(mapped);
+        } else {
+          setData(parsed);
+        }
+      }
     } catch (e) {
-      console.warn("Failed to parse local storage:", e);
+      console.warn("Failed to parse stored result:", e);
     }
   }, []);
 
-  // memo
-  const fileName = useMemo(
-    () =>
-      data ? `result_${new Date(data.ts).toISOString().slice(0, 19).replace(/[:T]/g, "-")}.wav` : "audio.wav",
-    [data]
-  );
   const distribution = useMemo(() => data?.result?.distribution ?? {}, [data]);
   const pitchSeries = useMemo(() => data?.result?.pitchSeries ?? [], [data]);
   const energySeries = useMemo(() => data?.result?.energySeries ?? [], [data]);
-  const adviceList = useMemo(
-    () =>
-      Array.isArray(data?.result?.advice) && (data?.result?.advice?.length ?? 0) > 0
-        ? (data!.result.advice as string[])
-        : ["ลองเว้นจังหวะให้ชัดขึ้นเล็กน้อย", "คุมระดับเสียงให้คงที่ขึ้นเพื่อความชัดเจน"],
+
+  const fileName = useMemo(
+    () => (data ? `result_${new Date(data.ts).toISOString().slice(0, 19).replace(/[:T]/g, "-")}.wav` : "audio.wav"),
     [data]
   );
 
+  const adviceList = useMemo(() => {
+    const fallbackEN = [
+      "Slow down slightly to improve clarity.",
+      "Stabilize your energy for consistent delivery.",
+      "Vary your tone to emphasize key points.",
+    ];
+    const fallbackTH = ["ลองชะลอจังหวะให้ชัดขึ้นเล็กน้อย", "คุมระดับเสียงให้คงที่ขึ้นเพื่อความชัดเจน", "ปรับโทนเสียงให้หลากหลายตรงจุดสำคัญ"];
+    return (data?.result?.advice && data.result.advice.length > 0)
+      ? data.result.advice
+      : (lang === "th" ? fallbackTH : fallbackEN);
+  }, [data, lang]);
+
   const displayDur = useMemo(() => {
-    const audioDur = typeof data?.audio?.dur === "number" && isFinite(data.audio.dur) ? data.audio.dur : null;
+    const audioDur =
+      typeof data?.audio?.dur === "number" && isFinite(data.audio.dur) ? data.audio.dur : null;
     const metaDur = audioMetaDur && isFinite(audioMetaDur) ? audioMetaDur : null;
     const seriesDur = pitchSeries.at(-1)?.t ?? energySeries.at(-1)?.t ?? 0;
     return audioDur ?? metaDur ?? seriesDur;
   }, [data, audioMetaDur, pitchSeries, energySeries]);
 
-  // วาดกราฟ
+  // draw chart like the old one (EN look & feel)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const points = tab === "pitch" ? pitchSeries : energySeries;
-
     const common = {
       gridColor: "rgba(255,255,255,0.08)",
       bg: "rgba(255,255,255,0.03)",
       xFmt: (x: number) => x.toFixed(1) + "s",
       xTicks: 8,
-      yTicks: 5
+      yTicks: 5,
     } as const;
 
-    drawLineChart(canvas, points, {
-      ...common,
-      color: tab === "pitch" ? "#22d3ee" : "#f59e0b",
-      unitY: tab === "pitch" ? "Hz" : "RMS",
-      yFmt: (y: number) => (tab === "pitch" ? y.toFixed(0) : y.toFixed(3))
-    });
-
-    const ro = new ResizeObserver(() =>
+    const paint = () =>
       drawLineChart(canvas, points, {
         ...common,
         color: tab === "pitch" ? "#22d3ee" : "#f59e0b",
         unitY: tab === "pitch" ? "Hz" : "RMS",
-        yFmt: (y: number) => (tab === "pitch" ? y.toFixed(0) : y.toFixed(3))
-      })
-    );
-    ro.observe(canvas);
-
-    const onResize = () =>
-      drawLineChart(canvas, points, {
-        ...common,
-        color: tab === "pitch" ? "#22d3ee" : "#f59e0b",
-        unitY: tab === "pitch" ? "Hz" : "RMS",
-        yFmt: (y: number) => (tab === "pitch" ? y.toFixed(0) : y.toFixed(3))
+        yFmt: (y: number) => (tab === "pitch" ? y.toFixed(0) : y.toFixed(3)),
       });
 
-    window.addEventListener("resize", onResize);
+    paint();
+    const ro = new ResizeObserver(paint);
+    ro.observe(canvas);
+    window.addEventListener("resize", paint);
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", paint);
     };
   }, [tab, pitchSeries, energySeries]);
 
   const hasData = !!data;
   const topColor = getEmoColor(data?.result?.emotion?.label);
 
-  /* ===================== Render ===================== */
+  /* i18n labels (default EN to match old screenshot) */
+  const L = (k: string) => {
+    const en: Record<string, string> = {
+      title: "Analysis Results",
+      primary: "Primary Emotion",
+      dist: "Emotion Distribution",
+      prosody: "Prosody Metrics",
+      avgPitch: "Average Pitch",
+      energy: "Energy Level",
+      wpm: "Speech Rate",
+      pitch: "Pitch",
+      energyTab: "Energy",
+      export: "Export PNG",
+      playback: "Playback",
+      suggestions: "Improvement Suggestions",
+      copy: "Copy JSON",
+      new: "New Analysis",
+      empty: `No result yet. Go to /analyze to start.`,
+    };
+    const th: Record<string, string> = {
+      title: "ผลการวิเคราะห์",
+      primary: "อารมณ์หลัก",
+      dist: "การกระจายอารมณ์",
+      prosody: "ตัวชี้วัดวัจนปฏิภาค",
+      avgPitch: "Average Pitch",
+      energy: "Energy Level",
+      wpm: "Speech Rate",
+      pitch: "Pitch",
+      energyTab: "Energy",
+      export: "Export PNG",
+      playback: "เล่นเสียง",
+      suggestions: "คำแนะนำในการปรับปรุง",
+      copy: "Copy JSON",
+      new: "New Analysis",
+      empty: "ยังไม่มีผลการวิเคราะห์ ไปที่ /analyze เพื่อเริ่มต้น",
+    };
+    return (lang === "th" ? th : en)[k] ?? k;
+  };
+
   return (
     <main className="min-h-screen px-6 py-8 text-gray-200 bg-background-dark">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Header (old layout) */}
         <header className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">graphic_eq</span>
-            <h1 className="text-2xl font-bold">Analysis Results</h1>
+            <h1 className="text-2xl font-bold">{L("title")}</h1>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -286,28 +353,26 @@ export default function ResultsPage() {
               className="px-3 h-10 rounded-lg bg-white/10 hover:bg-white/15 disabled:opacity-50"
               disabled={!hasData}
             >
-              Copy JSON
+              {L("copy")}
             </button>
             <a href="/analyze" className="px-3 h-10 rounded-lg bg-primary text-white grid place-items-center">
-              New Analysis
+              {L("new")}
             </a>
           </div>
         </header>
 
         {!hasData ? (
           <div className="min-h-[50vh] grid place-items-center">
-            <p className="text-gray-400">
-              ยังไม่มีผลการวิเคราะห์ ไปที่ <span className="text-primary">/analyze</span> เพื่อเริ่มต้น
-            </p>
+            <p className="text-gray-400">{L("empty")}</p>
           </div>
         ) : (
           <>
             {/* Top: Primary + Distribution */}
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Primary (สีตามอารมณ์) */}
+              {/* Primary card */}
               <div className="neu-surface p-6">
                 <p className="text-sm text-gray-400 mb-2">{fileName}</p>
-                <p className="text-sm">Primary Emotion</p>
+                <p className="text-sm">{L("primary")}</p>
 
                 <div className="mt-1 flex items-center justify-between">
                   <h3 className="text-xl font-semibold capitalize" style={{ color: topColor }}>
@@ -323,15 +388,15 @@ export default function ResultsPage() {
                     className="h-full rounded-full"
                     style={{
                       width: `${Math.round((data.result.emotion.confidence ?? 0) * 100)}%`,
-                      backgroundColor: topColor
+                      backgroundColor: topColor,
                     }}
                   />
                 </div>
               </div>
 
-              {/* Distribution (สีตามชนิดอารมณ์) */}
+              {/* Distribution card */}
               <div className="neu-surface p-6">
-                <p className="text-sm mb-3">Emotion Distribution</p>
+                <p className="text-sm mb-3">{L("dist")}</p>
                 <div className="space-y-3">
                   {Object.keys(distribution).map((emo) => {
                     const v = Math.round((distribution[emo] ?? 0) * 100);
@@ -355,55 +420,51 @@ export default function ResultsPage() {
               </div>
             </section>
 
-            {/* Middle: Metrics + Chart */}
+            {/* Middle: Prosody + Chart */}
             <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-              {/* Prosody */}
+              {/* Prosody metrics */}
               <div className="neu-surface p-6">
-                <p className="text-sm text-gray-400 mb-2">Prosody Metrics</p>
+                <p className="text-sm text-gray-400 mb-2">{L("prosody")}</p>
                 <ul className="space-y-3">
                   <li className="flex justify-between">
                     <span className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-secondary text-lg">music_note</span>
-                      Average Pitch
+                      {L("avgPitch")}
                     </span>
                     <span>{data.result.prosody.pitchHz} Hz</span>
                   </li>
                   <li className="flex justify-between">
                     <span className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-secondary text-lg">bolt</span>
-                      Energy Level
+                      {L("energy")}
                     </span>
                     <span>{data.result.prosody.energyRms} RMS</span>
                   </li>
                   <li className="flex justify-between">
                     <span className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-secondary text-lg">person</span>
-                      Speech Rate
+                      {L("wpm")}
                     </span>
                     <span>{data.result.prosody.wpm} WPM</span>
                   </li>
                 </ul>
               </div>
 
-              {/* Chart */}
+              {/* Chart (2 cols) */}
               <div className="neu-surface p-6 lg:col-span-2">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex gap-2">
                     <button
                       onClick={() => setTab("pitch")}
-                      className={`px-3 h-9 rounded-lg ${
-                        tab === "pitch" ? "bg-white/15 text-white" : "bg-white/5 text-gray-300"
-                      }`}
+                      className={`px-3 h-9 rounded-lg ${tab === "pitch" ? "bg-white/15 text-white" : "bg-white/5 text-gray-300"}`}
                     >
-                      Pitch
+                      {L("pitch")}
                     </button>
                     <button
                       onClick={() => setTab("energy")}
-                      className={`px-3 h-9 rounded-lg ${
-                        tab === "energy" ? "bg-white/15 text-white" : "bg-white/5 text-gray-300"
-                      }`}
+                      className={`px-3 h-9 rounded-lg ${tab === "energy" ? "bg-white/15 text-white" : "bg-white/5 text-gray-300"}`}
                     >
-                      Energy
+                      {L("energyTab")}
                     </button>
                   </div>
                   <button
@@ -417,14 +478,16 @@ export default function ResultsPage() {
                     }}
                     className="px-3 h-9 rounded-lg bg-white/10 hover:bg-white/15"
                   >
-                    Export PNG
+                    {L("export")}
                   </button>
                 </div>
 
                 <div className="rounded-xl bg-white/5 p-4">
-                  <canvas id="main-chart" ref={canvasRef} style={{ width: "100%", height: 220 }} />
+                  <canvas ref={canvasRef} style={{ width: "100%", height: 220 }} />
                   <p className="text-xs text-gray-400 mt-2">
-                    {tab === "pitch" ? `${pitchSeries.length} pitch points` : `${energySeries.length} energy points`}
+                    {tab === "pitch"
+                      ? `${pitchSeries.length} pitch points`
+                      : `${energySeries.length} energy points`}
                   </p>
                 </div>
               </div>
@@ -432,12 +495,12 @@ export default function ResultsPage() {
 
             {/* Bottom: Playback + Suggestions */}
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-              {/* Playback */}
               <div className="neu-surface p-6">
-                <p className="text-sm text-gray-400 mb-2">Playback</p>
+                <p className="text-sm text-gray-400 mb-2">{L("playback")}</p>
                 <audio
                   controls
                   className="w-full"
+                  autoPlay={autoplay}
                   onLoadedMetadata={(e) => {
                     const d = e.currentTarget.duration;
                     if (Number.isFinite(d)) setAudioMetaDur(d);
@@ -450,9 +513,8 @@ export default function ResultsPage() {
                 </p>
               </div>
 
-              {/* Advice */}
               <div className="neu-surface p-6">
-                <p className="text-sm text-gray-400 mb-2">Improvement Suggestions</p>
+                <p className="text-sm text-gray-400 mb-2">{L("suggestions")}</p>
                 <ul className="space-y-2">
                   {adviceList.map((a, i) => (
                     <li key={i} className="flex gap-2">
