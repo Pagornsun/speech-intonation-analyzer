@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 type SeriesPoint = { t: number; v: number };
 type Latest = {
   ts: number;
-  audio: { url: string; mime: string; dur?: number };
+  audio: { url: string; dataUrl?: string; mime: string; dur?: number };
   result: {
     emotion: { label: string; confidence: number };
     distribution: Record<string, number>;
@@ -206,14 +206,23 @@ export default function ResultsPage() {
         if (parsed?.file && parsed?.result) {
           const mapped: Latest = {
             ts: parsed.ts ?? Date.now(),
-            audio: { url: parsed.file.url, mime: parsed.file.mime, dur: parsed.file.dur },
+            audio: { url: parsed.file.url, dataUrl: parsed.file.dataUrl, mime: parsed.file.mime, dur: parsed.file.dur },
             result: {
               emotion: parsed.result.emotion,
               distribution: parsed.result.distribution,
               prosody: {
-                pitchHz: parsed.result.prosody?.pitch ?? parsed.result.prosody?.f0_mean ?? 0,
-                energyRms: parsed.result.prosody?.energy ?? parsed.result.prosody?.rms_mean ?? 0,
-                wpm: parsed.result.prosody?.wpm ?? parsed.result.prosody?.speech_rate ?? 0,
+                // Prefer new backend keys, then support older aliases
+                pitchHz:
+                  parsed.result.prosody?.pitchHz ??
+                  parsed.result.prosody?.pitch ??
+                  parsed.result.prosody?.f0_mean ?? 0,
+                energyRms:
+                  parsed.result.prosody?.energyRms ??
+                  parsed.result.prosody?.energy ??
+                  parsed.result.prosody?.rms_mean ?? 0,
+                wpm:
+                  parsed.result.prosody?.wpm ??
+                  parsed.result.prosody?.speech_rate ?? 0,
               },
               pitchSeries:
                 parsed.result.charts?.pitch?.map((p: [number, number]) => ({ t: p[0], v: p[1] })) ??
@@ -506,7 +515,7 @@ export default function ResultsPage() {
                     if (Number.isFinite(d)) setAudioMetaDur(d);
                   }}
                 >
-                  <source src={data.audio.url} type={data.audio.mime} />
+                  <source src={data.audio.dataUrl || data.audio.url} type={data.audio.mime} />
                 </audio>
                 <p className="text-xs text-gray-500 mt-1">
                   {(data.audio.mime || "audio").toLowerCase()} • {fmtSec(displayDur)} sec

@@ -109,12 +109,38 @@ export async function GET() {
 /* ---------- main POST ---------- */
 export async function POST(req: NextRequest) {
   try {
-    const backendURL = process.env.SER_BACKEND_URL;
-    if (!backendURL) {
-      return NextResponse.json({ error: "SER_BACKEND_URL not set" }, { status: 500 });
+    // Allow fallback to localhost for dev if env not provided
+    const backendURL = process.env.SER_BACKEND_URL || "http://127.0.0.1:8000/predict";
+
+    // Incoming form from client (has: audio, duration, samplingRate/fftSize, etc.)
+    const form = await req.formData();
+
+    const audio = form.get("audio");
+    if (!audio) {
+      return NextResponse.json({ error: "No audio provided" }, { status: 400 });
     }
-    const form = await req.formData(); // มี audio, duration จาก Recorder/Analyze page
-    const res = await fetch(backendURL, { method: "POST", body: form });
+
+    // Map client fields -> backend FastAPI expected names
+    // FastAPI expects: audio (file), duration, sampling_rate, fft_size, hop_length
+    const duration = Number(form.get("duration") || 0);
+    const samplingRate = Number(form.get("sampling_rate") || form.get("samplingRate") || form.get("sampleRate") || 16000);
+    const fftSize = Number(form.get("fft_size") || form.get("fftSize") || 1024);
+    const hopLength = Number(form.get("hop_length") || form.get("hopLength") || 320);
+
+    const backendForm = new FormData();
+    // Preserve filename if possible when forwarding
+    if (typeof File !== "undefined" && audio instanceof File) {
+      backendForm.append("audio", audio, audio.name || "audio.webm");
+    } else {
+      // @ts-ignore - in Node, audio may be a Blob
+      backendForm.append("audio", audio);
+    }
+    backendForm.append("duration", String(isFinite(duration) ? duration : 0));
+    backendForm.append("sampling_rate", String(isFinite(samplingRate) ? samplingRate : 16000));
+    backendForm.append("fft_size", String(isFinite(fftSize) ? fftSize : 1024));
+    backendForm.append("hop_length", String(isFinite(hopLength) ? hopLength : 320));
+
+    const res = await fetch(backendURL, { method: "POST", body: backendForm });
     const data = await res.json();
 
     if (!res.ok) {
@@ -122,10 +148,68 @@ export async function POST(req: NextRequest) {
     }
 
     // map ให้ตรงโครงสร้าง /results ของคุณ
+    // รวมถึงแปลงรหัสอารมณ์จากโมเดล (ANG, DIS, FEA, HAP, NEU, SAD) -> ชื่ออ่านง่าย
+    const codeToLabel: Record<string, string> = {
+      ANG: "angry",
+      DIS: "disgust",
+      FEA: "fear",
+      HAP: "happy",
+      NEU: "neutral",
+      SAD: "sad",
+    };
+
+    const rawLabel: string | undefined = data?.result?.emotion?.label;
+    const mappedLabel0 = rawLabel && codeToLabel[rawLabel] ? codeToLabel[rawLabel] : (rawLabel || "neutral");
+
+    const rawDist = (data?.result?.distribution || {}) as Record<string, number>;
+    const mappedDist0: Record<string, number> = {};
+    for (const [k, v] of Object.entries(rawDist)) {
+      const nk = codeToLabel[k] || k;
+      mappedDist0[nk] = v;
+    }
+
+    const defaultWeights: Record<string, number> = {
+      angry: 1,
+      disgust: 1,
+      fear: 1,
+      happy: 1,
+      neutral: 1,
+      sad: 1,
+      surprise: 1,
+    };
+    let weights: Record<string, number> = { ...defaultWeights };
+    const envJson = process.env.SER_CLASS_WEIGHTS;
+    if (envJson) {
+      try {
+        const parsed = JSON.parse(envJson);
+        for (const k of Object.keys(parsed)) if (k in weights && typeof parsed[k] === "number") weights[k] = parsed[k];
+      } catch {}
+    }
+    const overrideKeys = ["ANGRY","DISGUST","FEAR","HAPPY","NEUTRAL","SAD","SURPRISE"] as const;
+    for (const k of overrideKeys) {
+      const val = process.env[`SER_${k}_WEIGHT` as any];
+      if (val) {
+        const key = k.toLowerCase();
+        const num = Number(val);
+        if (Number.isFinite(num)) (weights as any)[key] = num;
+      }
+    }
+
+    const weightedEntries = Object.entries(mappedDist0).map(([k, v]) => [k, (v || 0) * (weights[k] ?? 1)] as const);
+    const sum = weightedEntries.reduce((a, [, v]) => a + v, 0) || 1;
+    const mappedDist: Record<string, number> = {};
+    for (const [k, v] of weightedEntries) mappedDist[k] = +(v / sum).toFixed(6);
+
+    // Recompute top from weighted distribution
+    let mappedLabel = mappedLabel0;
+    let mappedConf = 0;
+    for (const [k, v] of Object.entries(mappedDist)) {
+      if (v > mappedConf) { mappedConf = v; mappedLabel = k; }
+    }
     return NextResponse.json({
       result: {
-        emotion: data?.result?.emotion,
-        distribution: data?.result?.distribution,
+        emotion: { label: mappedLabel, confidence: mappedConf || data?.result?.emotion?.confidence || 0 },
+        distribution: mappedDist,
         prosody: data?.result?.prosody,
         pitchSeries: data?.result?.pitchSeries ?? [],
         energySeries: data?.result?.energySeries ?? [],
