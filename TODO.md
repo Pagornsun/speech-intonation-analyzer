@@ -1,0 +1,1 @@
+- [x] Replace content of web/src/app/api/analyze/route.ts with proxy code to FastAPI and response mapping
