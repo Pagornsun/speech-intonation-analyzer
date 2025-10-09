@@ -535,7 +535,7 @@ export default function ResultsPage() {
                 </div>
               </div>
               <div className="h-52">
-                <canvas ref={el => (canvasRef.current = el)} className="w-full h-full" />
+                <canvas ref={el => { canvasRef.current = el; }} className="w-full h-full" />
               </div>
               <div className="mt-2 text-sm text-gray-400">Duration: {fmtSec(displayDur ?? 0)}s</div>
             </div>

@@ -45,9 +45,9 @@ def build_attention_model(input_shape, num_classes):
 
     x = layers.Reshape((x.shape[1], x.shape[2]*x.shape[3]))(x)
     x = layers.Bidirectional(layers.LSTM(16, return_sequences=True))(x)
-    x = layers.Dropout(0.2)(x)  # ✅ แก้จาก 0.2 เป็น 0.3
-    x = SelfAttention(16)(x)
-    x = layers.Dropout(0.2)(x)  # ✅ แก้จาก 0.2 เป็น 0.3
+    x = layers.Dropout(0.2)(x)
+    x = SelfAttention(32)(x)
+    x = layers.Dropout(0.2)(x)
     x = layers.GlobalAveragePooling1D()(x)
     x = layers.Dense(16, activation='relu')(x)
     x = layers.Dropout(0.2)(x)  # ✅ แก้จาก 0.2 เป็น 0.3
