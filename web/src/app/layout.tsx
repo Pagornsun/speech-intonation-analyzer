@@ -57,7 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="/results" className="hover:text-primary transition-colors">
                 Results
               </a>
-              <a href="/setting" className="hover:text-primary transition-colors">
+              <a href="/settings" className="hover:text-primary transition-colors">
                 Settings
               </a>
             </nav>
